@@ -11,7 +11,13 @@ npm run lint      # ESLint
 npm run preview   # Preview production build locally
 ```
 
-No test runner is configured.
+Tests (once `feature/fastapi-backend` merges):
+
+```bash
+npm run test          # Vitest watch mode
+npm run test:run      # Single run
+npm run test:coverage # Coverage report
+```
 
 ## Environment Setup
 
@@ -66,3 +72,16 @@ Configured in `vite.config.ts` with `vite-plugin-pwa`. Maps API calls use `Netwo
 ### TypeScript
 
 Strict mode is on (`noUnusedLocals`, `noUnusedParameters`). Target is ES2020. Do not leave unused imports or variables.
+
+## Branching — Trunk-Based Development
+
+`main` is the trunk and must always be deployable. All work goes through short-lived branches.
+
+**Rules:**
+- Branch off `main`, merge back within **1-2 days** — never let a branch live longer
+- Branch names: `fix/`, `feat/`, `chore/` prefix (e.g. `feat/add-cuisine-filter`)
+- Before opening a PR: rebase onto latest `main`, confirm lint + build + tests pass locally
+- CI (GitHub Actions) runs lint, build, and tests on every push and PR to `main`
+- `main` is protected: CI must pass before merging
+
+**Large features** that take longer than 2 days should be built behind a feature flag so they can land on `main` incrementally without breaking the app.
