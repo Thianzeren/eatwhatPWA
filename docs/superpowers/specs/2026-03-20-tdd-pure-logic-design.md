@@ -1,8 +1,8 @@
 # TDD: Pure Logic Layer — Design Spec
 
 **Date:** 2026-03-20
-**Scope:** Install Vitest, write failing tests for the pure logic layer (utils + services), fix uncovered bugs. Hooks and components are out of scope for this phase.
-**Approach:** TDD — write failing test → fix bug → green → next.
+**Scope:** Install Vitest, write tests for the pure logic layer (utils + services), fix uncovered bugs. Hooks and components are out of scope for this phase.
+**Approach:** TDD — write failing test → fix bug → green → next. Where current behaviour is already correct, tests serve as regression baselines.
 
 ---
 
@@ -12,16 +12,22 @@
 ```
 vitest @vitest/coverage-v8 jsdom fake-indexeddb
 ```
-`@testing-library/react` is installed but unused until a future hook-testing phase.
 
 ### `vite.config.ts` — add `test` block
 ```ts
 test: {
   environment: 'jsdom',
   globals: true,
+  setupFiles: ['src/__tests__/setup.ts'],
   coverage: { provider: 'v8', reporter: ['text', 'lcov'] }
 }
 ```
+
+### `src/__tests__/setup.ts` — created as the global setup file
+```ts
+import 'fake-indexeddb/auto'
+```
+This replaces IndexedDB globally before any test suite runs, so `db.test.ts` requires no additional setup.
 
 ### `tsconfig.app.json` — add to `compilerOptions.types`
 ```json
@@ -42,6 +48,7 @@ test: {
 ```
 src/
   __tests__/
+    setup.ts               ← global test setup (fake-indexeddb)
     utils/
       random.test.ts
       distance.test.ts
@@ -50,94 +57,94 @@ src/
       db.test.ts
       placesService.test.ts
     helpers/
-      mockStorage.ts     ← shared localStorage mock
-      mockPlaces.ts      ← shared Google Places API stubs
+      mockStorage.ts       ← shared localStorage mock
+      mockPlaces.ts        ← shared Google Places API stubs
 ```
 
 ---
 
-## 3. Tests Per Module
+## 3. Exports Required Before Testing
 
-All tests are written to fail against current code first, then the production code is fixed to make them pass.
+The following functions in `placesService.ts` are currently private (no `export` keyword). They must be exported before they can be unit tested directly:
 
-### `random.ts` — 2 tests
-| Test | Expectation | Current behaviour |
-|------|-------------|-------------------|
-| `pickRandom([])` | returns `undefined` | ✅ passes (baseline) |
-| `pickRandom([a,b,c])` | returns one of the items | ✅ passes (baseline) |
+- `placeToRestaurant`
+- `parsePriceLevel`
+- `getPhotoUrl`
 
-No bugs to fix here. These tests serve as a regression baseline.
-
-### `distance.ts` — 2 tests
-| Test | Expectation | Current behaviour |
-|------|-------------|-------------------|
-| Known coordinates (Singapore CBD → Changi Airport, ~17.5 km) | result within ±0.5 km | likely ✅ |
-| `formatDistance` boundaries: 999 → "999 m", 1000 → "1.0 km", 1500 → "1.5 km" | correct string format | verify |
-
-No bugs expected. Tests serve as accuracy and formatting regression guards.
-
-### `storage.ts` — 3 tests
-| Test | Expectation | Current behaviour |
-|------|-------------|-------------------|
-| Round-trip: save then load returns same value | returns saved value | ✅ |
-| Load with malformed JSON in localStorage | returns fallback, does not throw | ✅ (silent catch) |
-| Load with missing key | returns fallback | ✅ |
-
-No bugs to fix. Tests guard against regressions in the silent-failure paths.
-
-### `db.ts` — 3 tests (using `fake-indexeddb`)
-| Test | Expectation | Current behaviour |
-|------|-------------|-------------------|
-| `addVisitRecord` then `getAllVisits` returns the record | record present | likely ✅ |
-| `deleteVisitRecord` removes the record | record absent after delete | likely ✅ |
-| `getVisitsByPlaceId` returns only records matching that placeId | filtered results | verify |
-
-`fake-indexeddb` replaces the real IndexedDB in the jsdom environment. No mock patching required — import `fake-indexeddb/auto` in the test setup file.
-
-### `placesService.ts` — 5 tests (Google Maps stubbed via `mockPlaces.ts`)
-| Test | Expectation | Current behaviour |
-|------|-------------|-------------------|
-| `placeToRestaurant` maps all fields correctly including nulls | correct Restaurant shape | verify |
-| `parsePriceLevel(undefined)` → `null`; `parsePriceLevel(0)` → `0`; `parsePriceLevel(4)` → `4` | correct values | likely ✅ |
-| `fetchNearbyRestaurants` with two cuisines that return overlapping placeIds deduplicates results | unique results only | **fails** — bug exists |
-| `fetchNearbyRestaurants` with empty cuisines array returns results | results returned | verify |
-| `getPhotoUrl` returns `null` when place has no photos | `null` | verify |
-
-**Bug to fix:** Deduplication across multi-cuisine queries. When multiple cuisine keywords are searched, the same place can appear in multiple results. Current code does not reliably deduplicate. Fix: collect all results, deduplicate by `placeId` before returning.
+These will be exported as named exports. This is the only production code change made before writing tests.
 
 ---
 
-## 4. Shared Test Helpers
+## 4. Tests Per Module
 
-### `mockStorage.ts`
-Wraps `vi.stubGlobal` / `vi.spyOn` to replace `localStorage` with an in-memory map. Provides `setup()` and `teardown()` functions called in `beforeEach`/`afterEach`.
+### `random.ts` — 2 tests (regression baselines)
+| Test | Expectation |
+|------|-------------|
+| `pickRandom([])` | returns `null` |
+| `pickRandom([a, b, c])` | returns one of the array items |
 
-### `mockPlaces.ts`
-Stubs `google.maps.places.PlacesService` with a factory that accepts a list of mock `PlaceResult` objects. The stub's `nearbySearch` calls the callback synchronously with `OK` status, enabling deterministic tests without async complexity.
+No bugs. These guard against regressions.
+
+### `distance.ts` — 2 tests (regression baselines)
+| Test | Expectation |
+|------|-------------|
+| Known coordinates: Singapore CBD → Changi Airport (~17.5 km) | result within ±0.5 km |
+| `formatDistance` boundaries: 999 → `"999 m"`, 1000 → `"1.0 km"`, 1500 → `"1.5 km"` | correct string format |
+
+No bugs expected. Tests serve as accuracy and formatting regression guards.
+
+### `storage.ts` — 3 tests (regression baselines)
+| Test | Expectation |
+|------|-------------|
+| Round-trip: save then load returns same value | returns saved value |
+| Load with malformed JSON in localStorage | returns fallback, does not throw |
+| Load with missing key | returns fallback |
+
+No bugs to fix. `mockStorage.ts` wraps `vi.spyOn(Storage.prototype, ...)` and is called in `beforeEach`/`afterEach` to isolate localStorage state between tests.
+
+### `db.ts` — 3 tests
+| Test | Expectation |
+|------|-------------|
+| `addVisitRecord` then `getAllVisits` | record is present in results |
+| `deleteVisitRecord` removes the record | `getAllVisits` returns empty after delete |
+| `getVisitsByPlaceId` | returns only records matching that `placeId` |
+
+**Isolation strategy:** `db.ts` holds a module-level singleton `dbPromise`. `fake-indexeddb/auto` installs a single shared global `indexedDB`, so simply re-importing `db.ts` via `vi.resetModules()` is not sufficient — reopening the same named database would still contain records from previous tests. Each test must:
+1. Call `vi.resetModules()` in `beforeEach` and dynamically re-import `db.ts` to reset `dbPromise`
+2. Call `indexedDB.deleteDatabase('eatwhat-db')` in `afterEach` to wipe the in-memory store
+
+This combination ensures each test starts with a clean database.
+
+### `placesService.ts` — 5 tests
+| Test | Status | Notes |
+|------|--------|-------|
+| `placeToRestaurant` maps all fields correctly, returns `null` for missing `place_id`/`name`/`geometry` | baseline | stub a minimal `PlaceResult` via `mockPlaces.ts` |
+| `parsePriceLevel`: `undefined→null`, `0→0`, `4→4` (one `it` block, three assertions) | baseline | |
+| `fetchNearbyRestaurants` with two cuisines returning overlapping `placeId`s deduplicates results | baseline | deduplication already implemented via `Set<string>` — confirms it works |
+| `fetchNearbyRestaurants` with empty `cuisines` array returns results | baseline | |
+| `getPhotoUrl` returns `null` when `place.photos` is empty | baseline | |
+
+`mockPlaces.ts` stubs `google.maps.places.PlacesService` with a factory that accepts mock `PlaceResult` arrays. The stub's `nearbySearch` calls its callback synchronously with `OK` status, making tests fully deterministic without async overhead.
 
 ---
 
 ## 5. Bug Fixes Triggered by Tests
 
-| File | Bug | Fix |
-|------|-----|-----|
-| `placesService.ts` | Multi-cuisine results not deduplicated by `placeId` | Collect all results into a `Map<placeId, Place>`, spread to array before returning |
-
-All other tests are expected to pass against current code (regression baselines) or reveal no bugs. If additional bugs surface during implementation, fix them as part of the same TDD cycle.
+No failing tests are anticipated from this test suite — all current behaviour in the tested modules is correct. If a test unexpectedly fails during implementation, fix the production code as part of the same TDD cycle before moving to the next test.
 
 ---
 
 ## 6. Out of Scope
 
-- React hooks (`use*.ts`) — deferred to a future phase using `@testing-library/react`
+- React hooks (`use*.ts`) — deferred to a future phase
 - Component tests — deferred
 - E2E tests — not planned
-- Code quality issues that are not caught by the 15 tests above (race conditions, missing error boundaries, etc.) — separate concern
+- Code quality issues not covered by these tests (race conditions, missing error boundaries, etc.) — separate concern
 
 ---
 
 ## 7. Success Criteria
 
 - `npm run test:run` passes with 15 tests across 5 test files
-- `npm run test:coverage` shows ≥80% coverage on the 5 tested files
-- No existing production behaviour is changed except the deduplication bug fix
+- `npm run test:coverage` shows ≥80% line coverage on the 5 tested source files
+- No production behaviour is changed except exporting 3 private functions from `placesService.ts`
