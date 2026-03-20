@@ -33,8 +33,6 @@ export function useRestaurantSpin(): UseRestaurantSpinReturn {
 
   const filtersKey = JSON.stringify(filterControls.filters)
 
-  const isBatchStale = lastFetchFiltersRef.current !== filtersKey
-
   const spin = useCallback(async () => {
     if (!location) {
       requestLocation()
@@ -47,6 +45,9 @@ export function useRestaurantSpin(): UseRestaurantSpinReturn {
     if (!isLoaded || !service) {
       return
     }
+
+    // Read ref inside callback (not during render) to check staleness
+    const isBatchStale = lastFetchFiltersRef.current !== filtersKey
 
     // If we have a fresh batch, just pick from it
     if (!isBatchStale && spinState.batch.length > 0) {
@@ -83,10 +84,13 @@ export function useRestaurantSpin(): UseRestaurantSpinReturn {
       const msg = err instanceof Error ? err.message : 'Something went wrong'
       setSpinState({ status: 'error', result: null, batch: [], errorMessage: msg })
     }
-  }, [location, isLoaded, loadError, service, filterControls.filters, filtersKey, isBatchStale, spinState.batch, requestLocation])
+  }, [location, isLoaded, loadError, service, filterControls.filters, filtersKey, spinState.batch, requestLocation])
 
   const spinAgain = useCallback(async () => {
     if (!location || !service || !isLoaded) return
+
+    // Read ref inside callback (not during render) to check staleness
+    const isBatchStale = lastFetchFiltersRef.current !== filtersKey
 
     if (isBatchStale || spinState.batch.length === 0) {
       // Need a fresh batch
@@ -102,7 +106,7 @@ export function useRestaurantSpin(): UseRestaurantSpinReturn {
       // Only one result — just show it again or re-fetch
       await spin()
     }
-  }, [location, service, isLoaded, isBatchStale, spinState.batch, spinState.result, spin])
+  }, [location, service, isLoaded, filtersKey, spinState.batch, spinState.result, spin])
 
   const retryLocation = useCallback(() => {
     requestLocation()

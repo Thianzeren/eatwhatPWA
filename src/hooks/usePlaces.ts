@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { Loader } from '@googlemaps/js-api-loader'
 
 interface UsePlacesReturn {
@@ -7,17 +7,17 @@ interface UsePlacesReturn {
   loadError: string | null
 }
 
+const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined
+
 export function usePlaces(): UsePlacesReturn {
+  const [service, setService] = useState<google.maps.places.PlacesService | null>(null)
   const [isLoaded, setIsLoaded] = useState(false)
-  const [loadError, setLoadError] = useState<string | null>(null)
-  const serviceRef = useRef<google.maps.places.PlacesService | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(
+    apiKey ? null : 'Google Maps API key is missing. Set VITE_GOOGLE_MAPS_API_KEY in .env',
+  )
 
   useEffect(() => {
-    const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined
-    if (!apiKey) {
-      setLoadError('Google Maps API key is missing. Set VITE_GOOGLE_MAPS_API_KEY in .env')
-      return
-    }
+    if (!apiKey) return
 
     const loader = new Loader({
       apiKey,
@@ -30,7 +30,7 @@ export function usePlaces(): UsePlacesReturn {
       .then(() => {
         // PlacesService requires a map or an HTML element
         const el = document.createElement('div')
-        serviceRef.current = new google.maps.places.PlacesService(el)
+        setService(new google.maps.places.PlacesService(el))
         setIsLoaded(true)
       })
       .catch((err: unknown) => {
@@ -40,5 +40,5 @@ export function usePlaces(): UsePlacesReturn {
       })
   }, [])
 
-  return { service: serviceRef.current, isLoaded, loadError }
+  return { service, isLoaded, loadError }
 }
